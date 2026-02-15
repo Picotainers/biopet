@@ -1,4 +1,4 @@
-name: Build and Publish Distroless biopet
+name: Build and Publish biopet
 
 on:
   push:
