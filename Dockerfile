@@ -1,34 +1,40 @@
 # syntax=docker/dockerfile:1
-# Compatibility-first template for biopet.
-# Installs package from Bioconda and copies the full conda runtime to avoid missing libs/interpreters.
 
-FROM mambaorg/micromamba:2.0.5-debian12-slim AS builder
+FROM eclipse-temurin:8-jdk-jammy AS builder
 
-RUN micromamba install -y -n base -c conda-forge -c bioconda \
-    biopet \
-    && micromamba clean --all --yes
+ARG DEBIAN_FRONTEND=noninteractive
+ARG BIOPET_VERSION=v0.9.0
 
-# Resolve a runnable command for this package.
-# Prefer exact match, then underscore variant, then prefix match.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    git \
+    maven \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /opt
+RUN git clone --branch "${BIOPET_VERSION}" --depth 1 --recurse-submodules https://github.com/biopet/biopet.git
+
+WORKDIR /opt/biopet
+RUN mvn -DskipTests -pl biopet-package -am package
+
 RUN set -eux; \
-    BIN=""; \
-    if [ -x "/opt/conda/bin/biopet" ]; then BIN="/opt/conda/bin/biopet"; fi; \
-    if [ -z "$BIN" ]; then CAND="/opt/conda/bin/$(echo biopet | tr '-' '_')"; [ -x "$CAND" ] && BIN="$CAND" || true; fi; \
-    if [ -z "$BIN" ]; then BIN="$(find /opt/conda/bin -maxdepth 1 -type f -perm -111 -name 'biopet*' | head -n1 || true)"; fi; \
-    test -n "$BIN"; \
-    printf '%s\n' "$BIN" > /tmp/tool-entry-path
+    JAR_PATH="$(find biopet-package/target -maxdepth 1 -type f -name 'Biopet-*.jar' ! -name 'original-*' | head -n 1)"; \
+    test -n "${JAR_PATH}"; \
+    mkdir -p /opt/build; \
+    cp "${JAR_PATH}" /opt/build/Biopet.jar
 
-FROM mambaorg/micromamba:2.0.5-debian12-slim
+FROM eclipse-temurin:8-jre-jammy
 
-COPY --from=builder /opt/conda /opt/conda
-COPY --from=builder /tmp/tool-entry-path /tmp/tool-entry-path
+ARG DEBIAN_FRONTEND=noninteractive
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    python3 \
+    && rm -rf /var/lib/apt/lists/*
 
-USER root
-ENV PATH="/opt/conda/bin:${PATH}"
-ENV LD_LIBRARY_PATH="/opt/conda/lib:/opt/conda/lib64"
-RUN set -eux; \
-    BIN="$(cat /tmp/tool-entry-path)"; \
-    printf '#!/usr/bin/env bash\nexec "%s" "$@"\n' "$BIN" > /usr/local/bin/biopet
-RUN chmod +x /usr/local/bin/biopet && rm -f /tmp/tool-entry-path
+COPY --from=builder /opt/build/Biopet.jar /opt/biopet/Biopet.jar
+
+RUN printf '#!/usr/bin/env bash\nexec java -jar /opt/biopet/Biopet.jar "$@"\n' > /usr/local/bin/biopet \
+    && chmod +x /usr/local/bin/biopet
+
 WORKDIR /data
-ENTRYPOINT ["/usr/local/bin/biopet"]
+ENTRYPOINT ["biopet"]

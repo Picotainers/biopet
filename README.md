@@ -1,7 +1,12 @@
 # biopet
-Small compatibility-focused container for `biopet`.
+Source-built container for `biopet`.
 
-## how to use
+## Quick Usage
+
 ```bash
-docker run --rm -v "$(pwd):/data" picotainers/biopet:latest --help
+# Pull the image
+docker pull docker.io/picotainers/biopet:latest
+
+# Run the tool
+docker run --rm docker.io/picotainers/biopet:latest biopet --help
 ```
